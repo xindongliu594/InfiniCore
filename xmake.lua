@@ -76,6 +76,20 @@ option_end()
 
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
+
+    -- Add cuDNN include path globally for nv-gpu builds
+    local cudnn_root_global = os.getenv("CUDNN_ROOT") or os.getenv("CUDNN_HOME") or os.getenv("CUDNN_PATH")
+    if cudnn_root_global == nil then
+        local pip_cudnn = "/home/liuxd/.local/lib/python3.12/site-packages/nvidia/cudnn"
+        if os.isdir(pip_cudnn) then
+            cudnn_root_global = pip_cudnn
+        end
+    end
+    if cudnn_root_global ~= nil then
+        add_includedirs(cudnn_root_global .. "/include")
+        add_linkdirs(cudnn_root_global .. "/lib")
+    end
+
     includes("xmake/nvidia.lua")
 end
 
@@ -92,7 +106,7 @@ end
 option("cuda_arch")
     set_showmenu(true)
     set_description("Set CUDA GPU architecture (e.g. sm_90)")
-    set_values("sm_50", "sm_60", "sm_70", "sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_90a")
+    set_values("sm_50", "sm_60", "sm_70", "sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_90a", "sm_120")
     set_category("option")
 option_end()
 
@@ -577,6 +591,10 @@ target("infiniop")
     end
     if has_config("nv-gpu") then
         add_deps("infiniop-nvidia")
+    local cudnn_root = os.getenv("CUDNN_ROOT") or os.getenv("CUDNN_HOME")
+    if cudnn_root and cudnn_root ~= "" then
+        add_linkdirs(cudnn_root .. "/lib")
+    end
     end
     if has_config("iluvatar-gpu") then
         add_deps("infiniop-iluvatar")

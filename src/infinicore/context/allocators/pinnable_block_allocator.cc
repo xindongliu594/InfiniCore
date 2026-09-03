@@ -10,6 +10,9 @@
 
 namespace infinicore {
 
+static size_t g_total_allocated = 0;
+static size_t g_alloc_count = 0;
+
 // ------------------- Helper functions -------------------
 
 // Round up size to nearest multiple of alignment
@@ -47,7 +50,10 @@ std::byte *PinnableBlockAllocator::allocate(size_t size) {
 
     std::shared_ptr<Block> block;
 
-    // 1. Try size-class allocation for small/medium
+    // 1. Try size-class allocation for small only (<=1MB)
+    // For larger allocations, skip size-class to avoid massive internal fragmentation
+    // (e.g. 85MB tensor in 128MB block wastes 34% memory)
+    if (size <= 1 * 1024 * 1024)
     for (auto &cls : size_classes_) {
         if (size <= cls.block_size) {
             if (!cls.free_blocks.empty()) {
@@ -74,7 +80,19 @@ std::byte *PinnableBlockAllocator::allocate(size_t size) {
             block->in_use = true;
             block->use_count = 1;
 
-            INFINICORE_CHECK_ERROR(infinirtMalloc(&block->ptr, block->size));
+            g_total_allocated += block->size;
+    g_alloc_count++;
+    {
+        FILE *dbg = fopen("/tmp/allocator_debug.log", "a");
+        if (dbg) {
+            fprintf(dbg, "[Allocator] Alloc #%lu: %.2f MB, total=%.2f GB\n",
+                    (unsigned long)g_alloc_count,
+                    (double)block->size / (1024.0 * 1024.0),
+                    (double)g_total_allocated / (1024.0 * 1024.0 * 1024.0));
+            fclose(dbg);
+        }
+    }
+    INFINICORE_CHECK_ERROR(infinirtMalloc(&block->ptr, block->size));
 
             all_blocks_[block->ptr] = block;
             return reinterpret_cast<std::byte *>(block->ptr);
@@ -101,6 +119,18 @@ std::byte *PinnableBlockAllocator::allocate(size_t size) {
     block->in_use = true;
     block->use_count = 1;
 
+    g_total_allocated += block->size;
+    g_alloc_count++;
+    {
+        FILE *dbg = fopen("/tmp/allocator_debug.log", "a");
+        if (dbg) {
+            fprintf(dbg, "[Allocator] Alloc #%lu: %.2f MB, total=%.2f GB\n",
+                    (unsigned long)g_alloc_count,
+                    (double)block->size / (1024.0 * 1024.0),
+                    (double)g_total_allocated / (1024.0 * 1024.0 * 1024.0));
+            fclose(dbg);
+        }
+    }
     INFINICORE_CHECK_ERROR(infinirtMalloc(&block->ptr, block->size));
 
     large_blocks_.push_back(block);
